@@ -4,35 +4,53 @@
 #include <time.h>
 #include <math.h>
 #include <vector>
+#include "main.h"
 //#include "OpenCV.h"
 //#include "OpenCV.cpp"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"// read pictures stb library
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h" // write prictures stb library
 
 #define BLOCKDIM_X 32
 #define BLOCKDIM_Y 32
-#define W 1500
-#define H 1500
+//#define W 4096
+//#define H 4096
+#define FILTER 3
+#define CHANNEL_NUM 1
+
 
 using namespace std;
 
-void insertionSort_(int *arr, int n);
-void swap_(int *a, int *b);
-void compareVectors(int *a, int *b);
-void generateRandom(int *a,int rows, int cols);
+void insertionSort_(uint8_t *arr, int n);
+void swap_(uint8_t *a, uint8_t *b);
+void compareVectors(uint8_t *a, uint8_t *b);
+void generateRandom(uint8_t *a,int rows, int cols);
 void serial_median_filter3x3();
 void parallel_median_filter3x3();
-void printMAT(int *a);
-void printVEC(int *a,int w);
-void copiarValores(int *a, int *b);
-
+void printMAT(uint8_t *a);
+void printVEC(uint8_t *a,int w);
+void copiarValores(uint8_t *a, uint8_t *b);
+//Leer y escribir imagenes
+uint8_t* readImage(char* file, int &width, int &height, int bpp);
+void writeImage(char* file, int width, int height, uint8_t *image);
 
 //Cargar imagen
-//OpenCV cv2("/tmp/tmp.whjZ5QMQTf/outputs/0.jpg");
+//OpenCV cv2("/tmp/tmp.UfSt4NNo2q/input/lena.jpg");
 //int H = cv2.getRows();
 //int W = cv2.getCols();
 
+int W, H, bpp;
+char *inFile= "/tmp/tmp.UfSt4NNo2q/input/lena_gray.jpg"; //
+char *outImage= "/tmp/tmp.UfSt4NNo2q/outputs/filtro_lena.jpg"; //
+
+
+// read an image
+uint8_t * image = readImage(inFile, W, H, bpp);
+
 //global variables
-int *h_img, *filtered_img_serial, *filtered_img_par;
-int *d_img, *d_img_res;
+uint8_t *h_img, *filtered_img_serial, *filtered_img_par;
+uint8_t *d_img, *d_img_res;
 int size = W*H*sizeof(int);
 
 // global timers
@@ -43,13 +61,13 @@ float parallelTimer = 0.0;
 
 #define KERNEL_R 3
 
-__device__ void swap(int *a, int *b){
+__device__ void swap(uint8_t *a, uint8_t *b){
     int d = *a;
     *a = *b;
     *b = d;
 }
 
-__device__ void insertionSort(int *arr, int n){
+__device__ void insertionSort(uint8_t *arr, int n){
     for(int i = 1; i < n; i++){
         int j = i - 1;
         int key = arr[i];
@@ -61,7 +79,7 @@ __device__ void insertionSort(int *arr, int n){
     }
 }
 
-__device__ void sort(int *a, int *b, int *c) {
+__device__ void sort(uint8_t *a, uint8_t *b, uint8_t *c) {
     int d;
     if(*a > *b){
         d = *a;
@@ -81,10 +99,10 @@ __device__ void sort(int *a, int *b, int *c) {
 }
 
 
-__global__ void medianFilter3x3(const int *src, int w, int h, int *dst){
+__global__ void medianFilter3x3(const uint8_t *src, int w, int h, uint8_t *dst){
     const int r = KERNEL_R;
     int rHalf = r / 2;
-    int imgBlock[r * r];
+    uint8_t imgBlock[r * r];
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int i, j, k, l;
@@ -108,15 +126,18 @@ __global__ void medianFilter3x3(const int *src, int w, int h, int *dst){
 int main() {
 
     // Reservar memoria en host
-    h_img = (int *) malloc(size);
-    filtered_img_par = (int *) malloc(size);
-    filtered_img_serial = (int *) malloc(size);
+    h_img = (uint8_t *) malloc(size);
+    filtered_img_par = (uint8_t *) malloc(size);
+    filtered_img_serial = (uint8_t *) malloc(size);
 
     //Convertir imagen a arreglo
     //cv2.getImage(h_img);
 
+    //Copiar imagen
+    copiarValores(image,h_img);
+
     //generar img aleatoria
-    generateRandom(h_img,W,H);
+    //generateRandom(h_img,W,H);
     //printf("Source image: \n");
     //printMAT(h_img);
 
@@ -137,6 +158,9 @@ int main() {
 
     //Guardar resultado
     //cv2.saveToimg(filtered_img_serial,"/tmp/tmp.UfSt4NNo2q/filtro.jpg",W,H);
+
+    // write an RGB image
+    writeImage(outImage, W, H, filtered_img_serial);
 
     free(h_img);
     free(filtered_img_par);
@@ -180,9 +204,10 @@ void parallel_median_filter3x3(){
 
 void serial_median_filter3x3(){
     clock_t start = clock();
-    for(int i=0;i<W;i++){
+    int half = FILTER/2;
+    for(int i=0 ;i<W;i++){
         for(int j=0;j<H;j++){
-            int box3x3[9];
+            uint8_t box3x3[FILTER*FILTER];
             if(i>0 && j>0 && i<W-1 && j<H-1){
                 box3x3[0] = h_img[(i-1)*W+(j-1)];
                 box3x3[1] = h_img[(i-1)*W+(j)];
@@ -193,15 +218,13 @@ void serial_median_filter3x3(){
                 box3x3[6] = h_img[(i+1)*W+(j-1)];
                 box3x3[7] = h_img[(i+1)*W+(j)];
                 box3x3[8] = h_img[(i+1)*W+(j+1)];
-
-                insertionSort_(box3x3,9);
-                int median = box3x3[4];
+                insertionSort_(box3x3,FILTER*FILTER);
+                uint8_t median = box3x3[FILTER+half];
                 filtered_img_serial[i*W+j]=median;
             }
             else{
                 filtered_img_serial[i*W+j]=h_img[i*W+j];
             }
-
         }
     }
     clock_t end = clock();
@@ -212,13 +235,13 @@ void serial_median_filter3x3(){
 }
 
 
-void swap_(int *a, int *b){
+void swap_(uint8_t *a, uint8_t *b){
     int d = *a;
     *a = *b;
     *b = d;
 }
 
-void insertionSort_(int *arr, int n){
+void insertionSort_(uint8_t *arr, int n){
     for(int i = 1; i < n; i++){
         int j = i - 1;
         int key = arr[i];
@@ -230,14 +253,14 @@ void insertionSort_(int *arr, int n){
     }
 }
 
-void generateRandom(int *a,int rows, int cols){
+void generateRandom(uint8_t *a,int rows, int cols){
     // Initialize seed
     srand(time(NULL));
     for(int i=0; i<rows*cols; i++){
         a[i] = rand() % 256;
     }
 }
-void compareVectors(int *a, int *b){
+void compareVectors(uint8_t *a, uint8_t *b){
     cout<<"Total elements "<<W*H<< endl;
     int diff = 0;
     for(int i= 0; i<W*H; i++)
@@ -252,27 +275,50 @@ void compareVectors(int *a, int *b){
         cout << "Vectors are equal!..." << endl;
 }
 
-void printMAT(int *a){
-    cout<<"[\n"<<endl;
+void printMAT(uint8_t *a){
+    cout<<"["<<"";
     for(int i = 0; i < W; i++){
         cout<<"["<<"";
         for(int j = 0; j < H; j++){
-            cout<<a[i* W + j]<<" ";
+            if((i* W + j)<(i+1)*W-1){
+                cout<<a[i* W + j]<<", ";
+            }
+            else{
+                cout<<a[i* W + j]<<"";
+            }
         }
-        cout<<"]\n"<<endl;
+        if (i<W-1){
+            cout<<"],"<<endl;
+        }
+        else{
+            cout<<"]"<<"";
+        }
+
     }
     cout<<"]\n"<<endl;
 }
-void printVEC(int *a,int w){
-    cout<<"[\n"<<endl;
+void printVEC(uint8_t *a,int w){
+    cout<<"["<<endl;
     for(int i = 0; i < w; i++){
-        cout<<a[i]<<" ";
+        cout<<a[i]<<", ";
     }
     cout<<"]\n"<<endl;
 }
 
-void copiarValores(int *a, int *b){
+void copiarValores(uint8_t *a, uint8_t *b){
     for(int i=0;i<W*H;i++){
         b[i]=a[i];
     }
+}
+
+uint8_t* readImage(char *file, int &width, int &height, int bpp){
+    //
+    uint8_t *rgb_image = stbi_load(file, &width, &height, &bpp, CHANNEL_NUM);
+    cout<< "Image size: " << width << " x " << height  << " = " << width * height  << " pixels"<< endl;
+    return rgb_image;
+}
+
+void writeImage(char* file, int width, int height,  uint8_t *image){
+    stbi_write_png(file, width, height, CHANNEL_NUM, image, width*CHANNEL_NUM);
+
 }
