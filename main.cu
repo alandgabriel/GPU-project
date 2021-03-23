@@ -19,7 +19,6 @@
 #define FILTER 3
 #define CHANNEL_NUM 1
 
-
 using namespace std;
 
 void insertionSort_(uint8_t *arr, int n);
@@ -41,19 +40,23 @@ void writeImage(char* file, int width, int height, uint8_t *image);
 //int W = cv2.getCols();
 
 int W, H, bpp;
-char *inFile= "/tmp/tmp.UfSt4NNo2q/input/lena_gray.jpg"; //
-char *outImage= "/tmp/tmp.UfSt4NNo2q/outputs/filtro_lena.jpg"; //
+char *inFile= "/tmp/tmp.UfSt4NNo2q/input/lena_noi.jpg"; //
+char *outImage= "/tmp/tmp.UfSt4NNo2q/outputs/filtro_lena_noi.jpg"; //
 
 
-// read an image
+// Leer una imagen
 uint8_t * image = readImage(inFile, W, H, bpp);
 
-//global variables
+//generar imagen aleatoria
+//uint8_t image[W*H];
+//generateRandom(image,W,H);
+
+//Variables globales
 uint8_t *h_img, *filtered_img_serial, *filtered_img_par;
 uint8_t *d_img, *d_img_res;
 int size = W*H*sizeof(int);
 
-// global timers
+// Timers globales
 double serialTimer = 0.0;
 float parallelTimer = 0.0;
 
@@ -115,7 +118,6 @@ __global__ void medianFilter3x3(const uint8_t *src, int w, int h, uint8_t *dst){
 
         insertionSort(imgBlock,r*r);
 
-        //Set median
         dst[x* w + y ] = imgBlock[rHalf + rHalf * r];
     }
     else if(x < w && y < h){
@@ -136,8 +138,6 @@ int main() {
     //Copiar imagen
     copiarValores(image,h_img);
 
-    //generar img aleatoria
-    //generateRandom(h_img,W,H);
     //printf("Source image: \n");
     //printMAT(h_img);
 
@@ -159,7 +159,7 @@ int main() {
     //Guardar resultado
     //cv2.saveToimg(filtered_img_serial,"/tmp/tmp.UfSt4NNo2q/filtro.jpg",W,H);
 
-    // write an RGB image
+    // Guardar imagen en escala de grises
     writeImage(outImage, W, H, filtered_img_serial);
 
     free(h_img);
@@ -257,7 +257,7 @@ void generateRandom(uint8_t *a,int rows, int cols){
     // Initialize seed
     srand(time(NULL));
     for(int i=0; i<rows*cols; i++){
-        a[i] = rand() % 256;
+        a[i] = (uint8_t) (rand() % 256);
     }
 }
 void compareVectors(uint8_t *a, uint8_t *b){
