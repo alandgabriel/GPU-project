@@ -4,24 +4,18 @@
 #include <time.h>
 #include <math.h>
 #include <vector>
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"// read pictures stb library
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+//#include "OpenCV.h"
+//#include "OpenCV.cpp"
 
 #define BLOCKDIM_X 32
 #define BLOCKDIM_Y 32
-#define BLOCKDIM BLOCKDIM_X * BLOCKDIM_Y
-#define W 64
-#define H 64
-#define N W * H
-#define CHANNEL_NUM 1
+#define W 1500
+#define H 1500
+
 using namespace std;
 
 void insertionSort_(int *arr, int n);
 void swap_(int *a, int *b);
-uint8_t* readImage(char* file, int &width, int &height, int bpp);
-void writeImage(char* file, int width, int height, uint8_t *image);
 void compareVectors(int *a, int *b);
 void generateRandom(int *a,int rows, int cols);
 void serial_median_filter3x3();
@@ -30,6 +24,13 @@ void printMAT(int *a);
 void printVEC(int *a,int w);
 void copiarValores(int *a, int *b);
 
+
+//Cargar imagen
+//OpenCV cv2("/tmp/tmp.whjZ5QMQTf/outputs/0.jpg");
+//int H = cv2.getRows();
+//int W = cv2.getCols();
+
+//global variables
 int *h_img, *filtered_img_serial, *filtered_img_par;
 int *d_img, *d_img_res;
 int size = W*H*sizeof(int);
@@ -82,30 +83,19 @@ __device__ void sort(int *a, int *b, int *c) {
 
 __global__ void medianFilter3x3(const int *src, int w, int h, int *dst){
     const int r = KERNEL_R;
+    int rHalf = r / 2;
     int imgBlock[r * r];
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int rHalf = r / 2;
     int i, j, k, l;
-    if(x - rHalf > 0 && x + rHalf < w && y - rHalf > 0 && y + rHalf < h){
+    if(x  > 0 && x  < w-1 && y  > 0 && y < h-1){
         for (i = x - rHalf, k = 0; i <= x + rHalf; i++, k++) {
             for (j = y - rHalf, l = 0; j <= y + rHalf; j++, l++) {
-                imgBlock[k*r + l] = src[i* w + j];
+                imgBlock[k* r + l ] = src[i* w + j ];
             }
         }
 
         insertionSort(imgBlock,r*r);
-
-        //Columns
-        //for(int row = 0; row < r; row++){
-        //    sort(&imgBlock[row * r], &imgBlock[row * r + 1], &imgBlock[row * r + 2]);
-        //}
-        //Rows
-        //for(int col = 0; col < r; col++){
-         //   sort(&imgBlock[col], &imgBlock[col + r], &imgBlock[col + r * 2]);
-        //}
-        //Diagonal
-        //sort(&imgBlock[0], &imgBlock[1 + r], &imgBlock[2 + 2 * r]);
 
         //Set median
         dst[x* w + y ] = imgBlock[rHalf + rHalf * r];
@@ -122,8 +112,13 @@ int main() {
     filtered_img_par = (int *) malloc(size);
     filtered_img_serial = (int *) malloc(size);
 
+    //Convertir imagen a arreglo
+    //cv2.getImage(h_img);
+
     //generar img aleatoria
     generateRandom(h_img,W,H);
+    //printf("Source image: \n");
+    //printMAT(h_img);
 
     // Reservar memoria en device
     cudaMalloc((void **)&d_img, size);
@@ -139,6 +134,9 @@ int main() {
 
     CUDA_CALL(cudaFree(d_img));
     CUDA_CALL(cudaFree(d_img_res));
+
+    //Guardar resultado
+    //cv2.saveToimg(filtered_img_serial,"/tmp/tmp.UfSt4NNo2q/filtro.jpg",W,H);
 
     free(h_img);
     free(filtered_img_par);
@@ -230,17 +228,6 @@ void insertionSort_(int *arr, int n){
             j--;
         }
     }
-}
-
-uint8_t* readImage(char *file, int &width, int &height, int bpp){
-    //
-    uint8_t *rgb_image = stbi_load(file, &width, &height, &bpp, CHANNEL_NUM);
-    cout<< "Image size: " << width << " x " << height  << " = " << width * height  << " pixels"<< endl;
-    return rgb_image;
-}
-
-void writeImage(char* file, int width, int height,  uint8_t *image){
-    stbi_write_png(file, width, height, CHANNEL_NUM, image, width*CHANNEL_NUM);
 }
 
 void generateRandom(int *a,int rows, int cols){
